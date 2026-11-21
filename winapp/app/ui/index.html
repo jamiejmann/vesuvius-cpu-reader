@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vesuvius Reader</title>
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --ink:#2b2118; --paper:#f6efe2; --accent:#9c4a1a; --muted:#7a6a58; --line:#e2d6c2; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Georgia, "Segoe UI", serif; background:var(--paper); color:var(--ink); }
+  header { padding:18px 28px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:16px; }
+  header h1 { margin:0; font-size:26px; letter-spacing:.5px; }
+  header .sub { color:var(--muted); font-size:14px; }
+  main { display:grid; grid-template-columns: 380px 1fr; gap:22px; padding:22px 28px; }
+  section { background:#fffaf1; border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:18px; }
+  h2 { font-size:17px; margin:0 0 10px; }
+  .step { display:inline-block; width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff; text-align:center; line-height:24px; font-size:14px; margin-right:6px; font-family:sans-serif; }
+  label { font-size:14px; }
+  select, input[type=text] { width:100%; padding:7px 8px; border:1px solid var(--line); border-radius:6px; font-size:14px; background:#fff; }
+  button { font-family:inherit; font-size:15px; padding:8px 16px; border-radius:7px; border:1px solid var(--accent); background:#fff; color:var(--accent); cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; }
+  button:disabled { opacity:.45; cursor:default; }
+  #seglist { height:260px; overflow:auto; border:1px solid var(--line); border-radius:6px; background:#fff; margin-top:8px; }
+  .seg { padding:6px 9px; border-bottom:1px solid #f1e8d8; cursor:pointer; font-size:13px; font-family:sans-serif; }
+  .seg:hover { background:#fbf3e4; } .seg.sel { background:#f3dcc8; }
+  .seg .um { color:var(--muted); float:right; }
+  .tabs { display:flex; gap:6px; margin-bottom:10px; } .tabs button { flex:1; padding:6px; font-size:14px; }
+  .tabs button.on { background:var(--accent); color:#fff; }
+  .muted { color:var(--muted); font-size:13px; }
+  .row { display:flex; gap:8px; align-items:center; margin-top:8px; }
+  #previewWrap { position:relative; display:inline-block; max-width:100%; cursor:crosshair; user-select:none; }
+  #previewImg { max-width:100%; max-height:46vh; display:block; border-radius:4px; }
+  #box { position:absolute; border:2px solid #ffb347; background:rgba(255,179,71,.18); display:none; pointer-events:none; }
+  .bar { height:16px; background:#efe4d1; border-radius:8px; overflow:hidden; margin:10px 0 6px; }
+  .bar div { height:100%; width:0; background:linear-gradient(90deg,#c0662b,#9c4a1a); transition:width .4s; }
+  #status { font-size:15px; }
+  #log { font-family:Consolas,monospace; font-size:11px; background:#2b2118; color:#e9dcc6; padding:8px; border-radius:6px; max-height:160px; overflow:auto; white-space:pre-wrap; display:none; }
+  .results { display:grid; grid-template-columns: 1fr; gap:12px; }
+  .results figure { margin:0; } .results img, .results canvas { max-width:100%; border-radius:4px; background:#000; }
+  figcaption { font-size:13px; color:var(--muted); margin-top:4px; }
+  .err { color:#a3261b; }
+  footer { padding:6px 28px 20px; color:var(--muted); font-size:12px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Vesuvius Reader</h1>
+  <span class="sub">Look for ink in the Herculaneum scrolls on an ordinary computer &mdash; no graphics card needed</span>
+</header>
+<main>
+<div>
+  <section>
+    <h2><span class="step">1</span>Choose a segment</h2>
+    <div class="tabs"><button id="tabCat" class="on">From the open data</button><button id="tabOwn">My own file / link</button></div>
+    <div id="paneCat">
+      <div class="row"><select id="scroll"></select></div>
+      <div class="row"><input id="q" type="text" placeholder="Search, e.g. w058"></div>
+      <div class="row"><label><input id="goodOnly" type="checkbox" checked> Only ~9&micro;m scans (what this model was trained on)</label></div>
+      <div id="seglist"><div class="seg">Loading the list of segments...</div></div>
+      <div class="muted" id="catNote"></div>
+    </div>
+    <div id="paneOwn" style="display:none">
+      <label>A surface-volume <b>.zarr</b> folder on this computer, or an s3:// / https:// link</label>
+      <div class="row"><input id="ownPath" type="text" placeholder="C:\scrolls\my-segment.zarr"></div>
+      <div class="row"><button id="browse">Browse...</button><button id="useOwn">Use this</button></div>
+    </div>
+  </section>
+  <section>
+    <h2><span class="step">3</span>Read the ink</h2>
+    <div class="row">
+      <label for="dir">Layer order&nbsp;</label>
+      <select id="dir" style="width:auto">
+        <option value="forward">Normal</option>
+        <option value="reverse">Reversed</option>
+        <option value="both">Try both (twice as long)</option>
+      </select>
+    </div>
+    <p class="muted" id="estimate">Pick a segment first.</p>
+    <div class="row"><button id="go" class="primary" disabled>Read the ink</button><button id="stop" disabled>Stop</button></div>
+    <div class="bar"><div id="barFill"></div></div>
+    <div id="status" class="muted">Ready.</div>
+    <p class="muted"><a href="#" id="toggleLog">Show details</a> &middot; <a href="#" id="openOut">Open my images folder</a></p>
+    <div id="log"></div>
+  </section>
+  <section class="muted" id="machine">Checking this computer...</section>
+</div>
+<div>
+  <section>
+    <h2><span class="step">2</span>Pick an area <span class="muted">(optional &mdash; drag a box; smaller areas finish faster)</span></h2>
+    <div id="previewMsg" class="muted">The segment preview will appear here.</div>
+    <div id="previewWrap" style="display:none"><img id="previewImg" alt="segment preview"><div id="box"></div></div>
+    <div class="row"><span id="roiText" class="muted"></span><button id="clearRoi" style="display:none">Use the whole segment</button></div>
+  </section>
+  <section>
+    <h2>Result</h2>
+    <div class="results" id="results"><p class="muted">Your ink image will appear here. White marks are where the model thinks there is ink.</p></div>
+  </section>
+</div>
+</main>
+<footer>
+  Model: Reader V3 by Domenico Russo (MIT). Inference code: ScrollPrize/villa (MIT). Data: Vesuvius Challenge open data, CC BY-NC 4.0 &mdash; non-commercial use, please credit the Vesuvius Challenge.
+  This app: github.com/jamiejmann/vesuvius-cpu-reader.
+</footer>
+<script>
+const $ = id => document.getElementById(id);
+let SEGS = [], current = null, meta = null, roi = null, info = null, polling = null, secPerPatch = 2.3;
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error(j.error || r.statusText);
+  return j;
+}
+function fmtTime(s) { if (s == null || !isFinite(s)) return ''; s = Math.round(s); if (s < 90) return s + ' s'; const m = Math.round(s/60); return m < 90 ? m + ' min' : (m/60).toFixed(1) + ' h'; }
+
+async function loadInfo() {
+  info = await api('/api/info');
+  const c = info.cpu;
+  // Jamie's laptop (Ryzen 5 7520U, 4 threads) took ~2.3 s per patch; scale roughly by thread count.
+  secPerPatch = 2.3 * 4 / Math.max(1, info.threads);
+  $('machine').innerHTML = `This computer: ${c.physical} cores / ${c.logical} threads` +
+    (c.avail_gb ? `, ${c.avail_gb.toFixed(1)} GB memory free` : '') +
+    `. The reader will use <b>${info.threads}</b> threads.<br>Images are saved in <b>${info.out_dir}</b>.` +
+    (info.model_ready ? '' : '<br>The model (about 140 MB) downloads automatically the first time.');
+}
+
+async function loadSegments(refresh) {
+  try {
+    SEGS = (await api('/api/segments' + (refresh ? '?refresh=1' : ''))).segments;
+  } catch (e) { $('seglist').innerHTML = `<div class="seg err">Could not load the list: ${e.message}. Check your internet connection.</div>`; return; }
+  const scrolls = [...new Set(SEGS.map(s => s.scroll))].sort();
+  $('scroll').innerHTML = '<option value="">All scrolls and fragments</option>' + scrolls.map(s => `<option>${s}</option>`).join('');
+  $('scroll').value = scrolls.includes('PHerc1447') ? 'PHerc1447' : '';
+  renderList();
+}
+function renderList() {
+  const sc = $('scroll').value, q = $('q').value.toLowerCase(), good = $('goodOnly').checked;
+  const rows = SEGS.filter(s => (!sc || s.scroll === sc) && (!good || s.good_res) && (!q || (s.segment + ' ' + s.name).toLowerCase().includes(q)));
+  $('catNote').textContent = `${rows.length} segments`;
+  $('seglist').innerHTML = rows.slice(0, 500).map((s, i) =>
+    `<div class="seg${current && current.url === s.url ? ' sel' : ''}" data-url="${s.url}"><span class="um">${s.pixel_um ? s.pixel_um + ' µm' : ''}</span>${s.scroll} · ${s.name}</div>`).join('')
+    || '<div class="seg muted">No segments match.</div>';
+  for (const el of document.querySelectorAll('.seg[data-url]')) el.onclick = () => choose(SEGS.find(s => s.url === el.dataset.url));
+}
+
+async function choose(seg) {
+  current = seg; roi = null; meta = null; updateRoi(); renderList();
+  $('previewWrap').style.display = 'none';
+  $('previewMsg').textContent = 'Loading a quick preview of ' + (seg.name || seg.url) + '...';
+  $('go').disabled = true;
+  try {
+    const m = await api('/api/preview', {volume: seg.url});
+    if (m.stage === 'error') throw new Error(m.msg);
+    meta = m;
+    $('previewImg').src = '/file?path=' + encodeURIComponent(m.image) + '&t=' + Date.now();
+    $('previewWrap').style.display = 'inline-block';
+    $('previewMsg').textContent = `${seg.scroll || ''} ${seg.name || ''} — ${m.full_w} × ${m.full_h} pixels, ${m.layers} layers. Middle layer shown.`;
+  } catch (e) {
+    $('previewMsg').innerHTML = `<span class="err">Preview failed: ${e.message}</span> You can still read the whole segment.`;
+  }
+  $('go').disabled = false; updateEstimate();
+}
+
+// --- drag a rectangle on the preview to choose the area (ROI in full-resolution pixels)
+let drag = null;
+$('previewWrap').addEventListener('mousedown', e => { const r = $('previewImg').getBoundingClientRect(); drag = {x0:e.clientX - r.left, y0:e.clientY - r.top, r}; e.preventDefault(); });
+window.addEventListener('mousemove', e => {
+  if (!drag) return;
+  const x1 = Math.min(Math.max(e.clientX - drag.r.left, 0), drag.r.width), y1 = Math.min(Math.max(e.clientY - drag.r.top, 0), drag.r.height);
+  Object.assign(drag, {x1, y1});
+  const b = $('box'); b.style.display = 'block';
+  b.style.left = Math.min(drag.x0, x1) + 'px'; b.style.top = Math.min(drag.y0, y1) + 'px';
+  b.style.width = Math.abs(x1 - drag.x0) + 'px'; b.style.height = Math.abs(y1 - drag.y0) + 'px';
+});
+window.addEventListener('mouseup', () => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.x1 == null || Math.abs(d.x1 - d.x0) < 6 || Math.abs(d.y1 - d.y0) < 6 || !meta) { $('box').style.display = 'none'; roi = null; updateRoi(); return; }
+  const sx = meta.full_w / d.r.width, sy = meta.full_h / d.r.height;
+  const X0 = Math.round(Math.min(d.x0, d.x1) * sx), X1 = Math.round(Math.max(d.x0, d.x1) * sx);
+  const Y0 = Math.round(Math.min(d.y0, d.y1) * sy), Y1 = Math.round(Math.max(d.y0, d.y1) * sy);
+  roi = [Math.max(0, Y0), Math.min(meta.full_h, Y1), Math.max(0, X0), Math.min(meta.full_w, X1)];
+  updateRoi();
+});
+function updateRoi() {
+  if (!roi) { $('box').style.display = 'none'; $('roiText').textContent = meta ? 'Whole segment selected.' : ''; $('clearRoi').style.display = 'none'; }
+  else { $('roiText').textContent = `Area: ${roi[3]-roi[2]} × ${roi[1]-roi[0]} pixels (x ${roi[2]}–${roi[3]}, y ${roi[0]}–${roi[1]})`; $('clearRoi').style.display = ''; }
+  updateEstimate();
+}
+$('clearRoi').onclick = () => { roi = null; updateRoi(); };
+function updateEstimate() {
+  if (!current) return;
+  if (!meta) { $('estimate').textContent = 'Time depends on the size of the segment.'; return; }
+  const h = roi ? roi[1]-roi[0] : meta.full_h, w = roi ? roi[3]-roi[2] : meta.full_w;
+  // 384-px patches every 192 px; blank areas are skipped, so this is an upper bound.
+  const patches = Math.ceil((h + 192) / 192) * Math.ceil((w + 192) / 192);
+  const mult = $('dir').value === 'both' ? 2 : 1;
+  $('estimate').textContent = `Up to about ${patches} patches — roughly ${fmtTime(patches * secPerPatch * mult)} or less on this computer (blank areas are skipped).`;
+}
+$('dir').onchange = updateEstimate;
+
+// --- run / progress
+$('go').onclick = async () => {
+  try {
+    await api('/api/run', {volume: current.url, roi, direction: $('dir').value, label: current.name ? `${current.scroll}_${current.name}` : ''});
+    $('go').disabled = true; $('stop').disabled = false; $('results').innerHTML = '<p class="muted">Working...</p>';
+    poll();
+  } catch (e) { $('status').innerHTML = `<span class="err">${e.message}</span>`; }
+};
+$('stop').onclick = async () => { await api('/api/stop', {}); };
+function poll() { clearInterval(polling); polling = setInterval(tick, 1000); tick(); }
+async function tick() {
+  const s = await api('/api/status');
+  const L = s.last || {};
+  $('barFill').style.width = (L.frac != null ? Math.round(L.frac * 100) : (s.state === 'done' ? 100 : 0)) + '%';
+  let txt = L.msg || s.state;
+  if (L.eta_s != null && s.state === 'running') txt += ` — about ${fmtTime(L.eta_s)} left`;
+  $('status').innerHTML = s.state === 'error' ? `<span class="err">${txt}</span>` : txt;
+  $('log').textContent = s.log.join('\n'); $('log').scrollTop = 1e9;
+  if (s.state !== 'running') {
+    clearInterval(polling); $('go').disabled = !current; $('stop').disabled = true;
+    if (s.state === 'done') showResults(s.images);
+    if (s.state === 'stopped') $('results').innerHTML = '<p class="muted">Stopped. Nothing was saved for this run.</p>';
+  }
+}
+function showResults(images) {
+  const R = $('results'); R.innerHTML = '';
+  images.forEach((p, i) => {
+    const f = document.createElement('figure');
+    f.innerHTML = `<img src="/file?path=${encodeURIComponent(p)}&t=${Date.now()}"><figcaption>${i ? 'Reversed layer order' : 'Your result'} — saved as ${p} <a href="#">open folder</a></figcaption>`;
+    f.querySelector('a').onclick = ev => { ev.preventDefault(); api('/api/open', {path: p}); };
+    R.appendChild(f);
+  });
+  // Side by side with the team's published map, if there is one (cropped to the same area).
+  if (current && current.official_preview && meta) {
+    const img = new Image();
+    img.onload = () => {
+      const s = img.naturalWidth / meta.full_w, r = roi || [0, meta.full_h, 0, meta.full_w];
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round((r[3]-r[2]) * s)); c.height = Math.max(1, Math.round((r[1]-r[0]) * s));
+      c.getContext('2d').drawImage(img, r[2]*s, r[0]*s, c.width, c.height, 0, 0, c.width, c.height);
+      c.style.width = '100%'; c.style.imageRendering = 'auto';
+      const f = document.createElement('figure'); f.appendChild(c);
+      f.insertAdjacentHTML('beforeend', '<figcaption>For comparison: the Vesuvius Challenge team\'s published ink map for the same area (low resolution, made on GPUs; may use a different model).</figcaption>');
+      R.appendChild(f);
+    };
+    img.src = current.official_preview;
+  }
+}
+
+// --- own file
+$('tabCat').onclick = () => { $('tabCat').classList.add('on'); $('tabOwn').classList.remove('on'); $('paneCat').style.display = ''; $('paneOwn').style.display = 'none'; };
+$('tabOwn').onclick = () => { $('tabOwn').classList.add('on'); $('tabCat').classList.remove('on'); $('paneOwn').style.display = ''; $('paneCat').style.display = 'none'; };
+$('browse').onclick = async () => { const r = await api('/api/browse', {}); if (r.path) $('ownPath').value = r.path; else if (!info.windows) alert('Type or paste the folder path.'); };
+$('useOwn').onclick = () => { const v = $('ownPath').value.trim(); if (v) choose({url: v, name: v.replace(/[\\/]+$/, '').split(/[\\/]/).pop(), scroll: ''}); };
+$('scroll').onchange = renderList; $('q').oninput = renderList; $('goodOnly').onchange = renderList;
+$('toggleLog').onclick = e => { e.preventDefault(); const l = $('log'); l.style.display = l.style.display === 'block' ? 'none' : 'block'; };
+$('openOut').onclick = e => { e.preventDefault(); api('/api/open', {}); };
+
+loadInfo(); loadSegments(); api('/api/status').then(s => { if (s.state === 'running') { $('stop').disabled = false; poll(); } });
+</script>
+</body>
+</html>

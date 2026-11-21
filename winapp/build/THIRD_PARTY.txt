@@ -1,0 +1,13 @@
+Vesuvius Reader bundles or downloads the following. Thank you to everyone who made them.
+
+- Reader V3 ink model and checkpoint by Domenico Russo (MIT). Downloaded on first run from
+  https://huggingface.co/domenicor046/reader-v3 (sha256-checked). https://github.com/DomRusso2/reader-v3
+- villa (ScrollPrize/villa) by the Vesuvius Challenge team and contributors (MIT): the ink-inference code in villa/.
+- Python (PSF License, see python/LICENSE.txt), PyTorch and torchvision (BSD-3-Clause), timm (Apache-2.0),
+  NumPy (BSD-3-Clause), Pillow (MIT-CMU), zarr / numcodecs (MIT), tifffile and imagecodecs (BSD-3-Clause),
+  fsspec (BSD-3-Clause), aiohttp (Apache-2.0), einops (MIT), PyYAML (MIT), psutil (BSD-3-Clause).
+  Each package's own license file is in python/Lib/site-packages/<package>.dist-info/.
+- Microsoft Visual C++ runtime DLLs (redistributable under the Visual Studio license terms).
+
+Data: Vesuvius Challenge open data is CC BY-NC 4.0 (non-commercial, with attribution). Images you make
+from it inherit those terms. Please cite "Vesuvius Challenge - CT Scans of Herculaneum Papyri".
