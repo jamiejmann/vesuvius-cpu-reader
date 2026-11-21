@@ -69,6 +69,9 @@ def main() -> int:
         assert st["state"] == "done" and st["images"], st
         png = call("/file?path=" + urllib.request.quote(st["images"][0]))
         assert isinstance(png, bytes) and png[:4] == b"\x89PNG"
+        assert st.get("scan"), "scan layer for the overlay view missing"
+        scan = call("/file?path=" + urllib.request.quote(st["scan"]))
+        assert isinstance(scan, bytes) and scan[:4] == b"\x89PNG"
         print("tiny read OK in", round(st["elapsed_s"]), "s:", st["images"][0])
         call("/api/run", {"volume": W058, "label": "smoke_stop"})
         time.sleep(8)

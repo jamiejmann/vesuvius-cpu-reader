@@ -96,19 +96,20 @@ class Job:
         self.last: dict = {}
         self.log: list[str] = []
         self.images: list[str] = []
+        self.scan: str | None = None
         self.started = 0.0
         self.name = ""
 
     def snapshot(self) -> dict:
         with self.lock:
-            return {"state": self.state, "last": self.last, "log": self.log[-40:], "images": self.images,
+            return {"state": self.state, "last": self.last, "log": self.log[-40:], "images": self.images, "scan": self.scan,
                     "elapsed_s": (time.time() - self.started) if self.started else 0, "name": self.name}
 
     def start(self, args: list[str], name: str) -> None:
         with self.lock:
             if self.proc and self.proc.poll() is None:
                 raise ValueError("Already reading a segment. Press Stop first.")
-            self.state, self.last, self.log, self.images = "running", {"msg": "Starting..."}, [], []
+            self.state, self.last, self.log, self.images, self.scan = "running", {"msg": "Starting..."}, [], [], None
             self.started, self.name = time.time(), name
             self.proc = spawn_worker(args)
         threading.Thread(target=self._pump, args=(self.proc,), daemon=True).start()
@@ -127,6 +128,7 @@ class Job:
                     self.last = msg
                     if msg.get("stage") == "done":
                         self.images = msg.get("images", [])
+                        self.scan = msg.get("scan")
                     if msg.get("stage") == "error":
                         self.state = "error"
                 else:

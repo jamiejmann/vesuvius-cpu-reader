@@ -167,6 +167,35 @@ def segment_preview(volume: str, out_png: Path, max_side: int = 1400) -> dict:
     return {"full_h": int(full[1]), "full_w": int(full[2]), "layers": int(full[0]), "level": level}
 
 
+def scan_crop_png(volume: str, roi, out_png: Path, like_tif: Path, max_pixels: int = 40_000_000) -> Path | None:
+    """Save the middle CT layer for the same area as the ink image (display aid for the overlay view only)."""
+    try:
+        import numpy as np, tifffile
+        from PIL import Image
+        from vc_reader.reader import open_node
+        h, w = tifffile.imread(str(like_tif)).shape[:2]
+        root = open_node(volume)
+        full = root if hasattr(root, "shape") else root["0"]
+        y0, y1, x0, x1 = roi if roi else (0, full.shape[1], 0, full.shape[2])
+        level, arr = 0, full
+        if not hasattr(root, "shape"):
+            while (y1 - y0) * (x1 - x0) / 4 ** level > max_pixels and level < 5:
+                level += 1
+            arr = root[str(level)]
+        f = 2 ** level
+        im = np.asarray(arr[arr.shape[0] // 2, y0 // f: -(-y1 // f), x0 // f: -(-x1 // f)]).astype("float32")
+        v = im[im > 0]
+        lo, hi = (float(np.percentile(v, 1)), float(np.percentile(v, 99.5))) if v.size else (0.0, 255.0)
+        img = Image.fromarray((np.clip((im - lo) / max(hi - lo, 1e-6), 0, 1) * 255).astype("uint8"))
+        if img.size != (w, h):
+            img = img.resize((w, h))
+        img.save(out_png)
+        return out_png
+    except Exception as e:  # never fail a finished read over the display aid
+        print(f"(could not save the scan layer for the overlay view: {e})", flush=True)
+        return None
+
+
 # ---------------------------------------------------------------- the run
 class _Progress:
     """Wraps villa's patch loader so we can count finished patches and estimate time left."""
@@ -259,7 +288,9 @@ def run(volume: str, out_prefix: Path, roi=None, direction="forward", threads=0,
             png = tif.with_suffix(".png")
             preview_png(tif, png)
             pngs.append(png)
+    scan = scan_crop_png(volume, roi, out_prefix.with_name(out_prefix.name + "_scan_layer.png"), tifs[0]) if pngs else None
     emit(stage="done", msg=f"Done in {secs/60:.1f} minutes", seconds=secs, images=[str(p) for p in pngs],
+         scan=str(scan) if scan else None,
          tifs=[str(t) for t in tifs if t.exists()])
     return pngs
 

@@ -40,6 +40,13 @@
   .results figure { margin:0; } .results img, .results canvas { max-width:100%; border-radius:4px; background:#000; }
   figcaption { font-size:13px; color:var(--muted); margin-top:4px; }
   .err { color:#a3261b; }
+  .viewer { background:#f3ead9; border:1px dashed #c9b48f; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-family:sans-serif; font-size:13px; }
+  .viewer .vrow { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin:5px 0; }
+  .viewer label { font-size:13px; display:flex; align-items:center; gap:6px; }
+  .viewer input[type=range] { width:120px; }
+  .viewer .tag { display:inline-block; background:#fff3cd; border:1px solid #e0c56e; color:#6b5200; border-radius:4px; padding:2px 7px; font-size:12px; }
+  .viewer button { font-size:13px; padding:4px 10px; }
+  .seg-btn button.on { background:var(--accent); color:#fff; }
   footer { padding:6px 28px 20px; color:var(--muted); font-size:12px; }
   a { color:var(--accent); }
 </style>
@@ -221,18 +228,96 @@ async function tick() {
   $('log').textContent = s.log.join('\n'); $('log').scrollTop = 1e9;
   if (s.state !== 'running') {
     clearInterval(polling); $('go').disabled = !current; $('stop').disabled = true;
-    if (s.state === 'done') showResults(s.images);
+    if (s.state === 'done') showResults(s.images, s.scan);
     if (s.state === 'stopped') $('results').innerHTML = '<p class="muted">Stopped. Nothing was saved for this run.</p>';
   }
 }
-function showResults(images) {
-  const R = $('results'); R.innerHTML = '';
-  images.forEach((p, i) => {
-    const f = document.createElement('figure');
-    f.innerHTML = `<img src="/file?path=${encodeURIComponent(p)}&t=${Date.now()}"><figcaption>${i ? 'Reversed layer order' : 'Your result'} — saved as ${p} <a href="#">open folder</a></figcaption>`;
+// --- result viewer: display-only enhancements, computed in the browser. The saved files are never changed.
+const VIEW = {mode:'ink', contrast:1, bright:0, invert:false, cutoff:0, color:'#ffb000', opacity:70};
+let VIEWS = [], SCAN = null, renderQueued = false;
+function loadGray(src) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data, out = new Uint8Array(c.width * c.height);
+      for (let i = 0, j = 0; j < out.length; i += 4, j++) out[j] = d[i];
+      res({w: c.width, h: c.height, px: out});
+    };
+    im.onerror = rej; im.src = src;
+  });
+}
+function viewerHTML(hasScan) {
+  return `<div class="viewer" id="viewer">
+  <div class="vrow"><b>Make it easier to read</b> <span class="tag">Display enhancement only &mdash; your saved images are not changed</span></div>
+  <div class="vrow seg-btn">View:
+    <button data-mode="ink" class="on">Ink only</button>
+    <button data-mode="overlay" ${hasScan ? '' : 'disabled title="No scan layer saved for this run"'}>Ink highlighted on the scan</button></div>
+  <div class="vrow">
+    <label>Contrast <input type="range" id="vContrast" min="0.5" max="4" step="0.1" value="1"><span id="vContrastV">1.0×</span></label>
+    <label>Brightness <input type="range" id="vBright" min="-120" max="120" step="5" value="0"><span id="vBrightV">0</span></label>
+    <label><input type="checkbox" id="vInvert"> Dark letters on light background</label></div>
+  <div class="vrow">
+    <label title="Hide faint marks the model is less sure about">Hide weak ink below <input type="range" id="vCut" min="0" max="250" step="5" value="0"><span id="vCutV">off</span></label>
+    <label>Highlight colour <select id="vColor" style="width:auto"><option value="#ffb000">Gold</option><option value="#ff3b30">Red</option><option value="#00d5ff">Cyan</option><option value="#39ff14">Green</option></select></label>
+    <label>Highlight strength <input type="range" id="vOpacity" min="0" max="100" step="5" value="70"><span id="vOpacityV">70%</span></label></div>
+  <div class="vrow"><button id="vReset">Reset</button><button id="vSave">Save this view as a picture</button>
+    <span class="muted">This is not zooming in: the model looks <i>through</i> the layers of the papyrus and marks where it thinks ink is. Brighter = more confident.</span></div>
+</div>`;
+}
+function hexRGB(h) { return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; }
+function renderView(v) {
+  const {w, h, px} = v.ink, c = v.canvas; c.width = w; c.height = h;
+  const g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data;
+  const k = VIEW.contrast, b = VIEW.bright, cut = VIEW.cutoff, inv = VIEW.invert;
+  const scan = VIEW.mode === 'overlay' && SCAN && SCAN.w === w && SCAN.h === h ? SCAN.px : null;
+  const [cr, cg, cb] = hexRGB(VIEW.color), op = VIEW.opacity / 100;
+  const lut = new Uint8ClampedArray(256);  // ink value -> displayed strength
+  for (let x = 0; x < 256; x++) lut[x] = x < cut ? 0 : Math.max(0, Math.min(255, (x - 128) * k + 128 + b));
+  for (let j = 0, i = 0; j < px.length; j++, i += 4) {
+    const s = lut[px[j]];
+    if (scan) {
+      let base = scan[j]; if (inv) base = 255 - base;
+      const a = px[j] < cut ? 0 : op * s / 255;
+      d[i] = base + (cr - base) * a; d[i+1] = base + (cg - base) * a; d[i+2] = base + (cb - base) * a;
+    } else {
+      const y = inv ? 255 - s : s; d[i] = d[i+1] = d[i+2] = y;
+    }
+    d[i+3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+}
+function renderAll() { if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; VIEWS.forEach(renderView); }); }
+function wireViewer() {
+  const bind = (id, key, fmt, parse = Number) => { const el = $(id); el.oninput = () => { VIEW[key] = parse(el.value); if ($(id + 'V')) $(id + 'V').textContent = fmt(VIEW[key]); renderAll(); }; };
+  bind('vContrast', 'contrast', v => v.toFixed(1) + '×');
+  bind('vBright', 'bright', v => (v > 0 ? '+' : '') + v);
+  bind('vCut', 'cutoff', v => v ? v : 'off');
+  bind('vOpacity', 'opacity', v => v + '%');
+  bind('vColor', 'color', v => v, String);
+  $('vInvert').onchange = () => { VIEW.invert = $('vInvert').checked; renderAll(); };
+  for (const bt of document.querySelectorAll('#viewer [data-mode]')) bt.onclick = () => {
+    VIEW.mode = bt.dataset.mode; document.querySelectorAll('#viewer [data-mode]').forEach(x => x.classList.toggle('on', x === bt)); renderAll(); };
+  $('vReset').onclick = () => { Object.assign(VIEW, {contrast:1, bright:0, invert:false, cutoff:0, opacity:70, color:'#ffb000'});
+    $('vContrast').value = 1; $('vBright').value = 0; $('vInvert').checked = false; $('vCut').value = 0; $('vOpacity').value = 70; $('vColor').value = '#ffb000';
+    ['vContrast','vBright','vCut','vOpacity'].forEach(id => $(id).oninput()); };
+  $('vSave').onclick = () => { if (!VIEWS[0]) return; const a = document.createElement('a'); a.download = (VIEWS[0].name || 'ink') + '_view.png'; a.href = VIEWS[0].canvas.toDataURL('image/png'); a.click(); };
+}
+async function showResults(images, scanPath) {
+  const R = $('results'); R.innerHTML = viewerHTML(!!scanPath); VIEWS = []; SCAN = null; VIEW.mode = 'ink';
+  wireViewer();
+  const t = Date.now();
+  if (scanPath) { try { SCAN = await loadGray(`/file?path=${encodeURIComponent(scanPath)}&t=${t}`); } catch (e) { SCAN = null; } }
+  for (const [i, p] of images.entries()) {
+    const f = document.createElement('figure'), c = document.createElement('canvas');
+    f.appendChild(c);
+    f.insertAdjacentHTML('beforeend', `<figcaption>${i ? 'Reversed layer order' : 'Your result'} — saved (unchanged) as ${p} <a href="#">open folder</a></figcaption>`);
     f.querySelector('a').onclick = ev => { ev.preventDefault(); api('/api/open', {path: p}); };
     R.appendChild(f);
-  });
+    const ink = await loadGray(`/file?path=${encodeURIComponent(p)}&t=${t}`);
+    const v = {canvas: c, ink, name: p.split(/[\\/]/).pop().replace(/\.png$/i, '')}; VIEWS.push(v); renderView(v);
+  }
   // Side by side with the team's published map, if there is one (cropped to the same area).
   if (current && current.official_preview && meta) {
     const img = new Image();
@@ -241,7 +326,7 @@ function showResults(images) {
       const c = document.createElement('canvas');
       c.width = Math.max(1, Math.round((r[3]-r[2]) * s)); c.height = Math.max(1, Math.round((r[1]-r[0]) * s));
       c.getContext('2d').drawImage(img, r[2]*s, r[0]*s, c.width, c.height, 0, 0, c.width, c.height);
-      c.style.width = '100%'; c.style.imageRendering = 'auto';
+      c.style.width = '100%';
       const f = document.createElement('figure'); f.appendChild(c);
       f.insertAdjacentHTML('beforeend', '<figcaption>For comparison: the Vesuvius Challenge team\'s published ink map for the same area (low resolution, made on GPUs; may use a different model).</figcaption>');
       R.appendChild(f);
