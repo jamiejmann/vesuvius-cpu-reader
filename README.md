@@ -1,6 +1,5 @@
 # Read a Herculaneum scroll segment on a laptop CPU — no GPU, no compiler
 
-> **DRAFT for Jamie's review — not published.** Tested with villa @ c8f3ba4 (Nov 20, 2026). Numbers are from one Linux box (8 vCPU Xeon with AMX, 16 GB RAM, no GPU,
 > shared with other jobs). Tested on Linux and Windows (AMD Ryzen 5 7520U laptop, no GPU, no compiler: the 2048×4096 example ran in 681 s); macOS not yet tested.
 
 One command turns a published Vesuvius Challenge surface volume into an ink image with **Reader V3**, the 9 µm ink model
