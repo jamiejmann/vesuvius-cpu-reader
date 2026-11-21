@@ -1,0 +1,11 @@
+# CPU-only stack for read_segment_cpu.py (install torch/torchvision from the CPU index first, see README)
+einops
+timm
+pyyaml
+numpy
+pillow
+tifffile
+imagecodecs
+zarr>=3
+fsspec
+aiohttp
