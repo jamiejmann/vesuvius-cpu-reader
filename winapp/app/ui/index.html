@@ -260,7 +260,7 @@ function viewerHTML(hasScan) {
     <label><input type="checkbox" id="vInvert"> Dark letters on light background</label></div>
   <div class="vrow">
     <label title="Hide faint marks the model is less sure about">Hide weak ink below <input type="range" id="vCut" min="0" max="250" step="5" value="0"><span id="vCutV">off</span></label>
-    <label>Highlight colour <select id="vColor" style="width:auto"><option value="#ffb000">Gold</option><option value="#ff3b30">Red</option><option value="#00d5ff">Cyan</option><option value="#39ff14">Green</option></select></label>
+    <label>Highlight colour <select id="vColor" style="width:auto"><option value="#ffb000">Gold</option><option value="#1a1410">Black</option><option value="#ff3b30">Red</option></select></label>
     <label>Highlight strength <input type="range" id="vOpacity" min="0" max="100" step="5" value="70"><span id="vOpacityV">70%</span></label></div>
   <div class="vrow"><button id="vReset">Reset</button><button id="vSave">Save this view as a picture</button>
     <span class="muted">This is not zooming in: the model looks <i>through</i> the layers of the papyrus and marks where it thinks ink is. Brighter = more confident.</span></div>
@@ -273,14 +273,21 @@ function renderView(v) {
   const k = VIEW.contrast, b = VIEW.bright, cut = VIEW.cutoff, inv = VIEW.invert;
   const scan = VIEW.mode === 'overlay' && SCAN && SCAN.w === w && SCAN.h === h ? SCAN.px : null;
   const [cr, cg, cb] = hexRGB(VIEW.color), op = VIEW.opacity / 100;
+  const darkInk = !!(scan && cr + cg + cb < 80);
   const lut = new Uint8ClampedArray(256);  // ink value -> displayed strength
   for (let x = 0; x < 256; x++) lut[x] = x < cut ? 0 : Math.max(0, Math.min(255, (x - 128) * k + 128 + b));
   for (let j = 0, i = 0; j < px.length; j++, i += 4) {
     const s = lut[px[j]];
     if (scan) {
       let base = scan[j]; if (inv) base = 255 - base;
+      // Black ink disappears on dark papyrus, so lift the scan toward a light, slightly warm sheet.
+      let br = base, bg = base, bb = base;
+      if (darkInk && !inv) {
+        base = Math.min(255, 150 + base * 0.40);
+        br = Math.min(255, base * 1.06); bg = base; bb = Math.max(0, base * 0.90);
+      }
       const a = px[j] < cut ? 0 : op * s / 255;
-      d[i] = base + (cr - base) * a; d[i+1] = base + (cg - base) * a; d[i+2] = base + (cb - base) * a;
+      d[i] = br + (cr - br) * a; d[i+1] = bg + (cg - bg) * a; d[i+2] = bb + (cb - bb) * a;
     } else {
       const y = inv ? 255 - s : s; d[i] = d[i+1] = d[i+2] = y;
     }

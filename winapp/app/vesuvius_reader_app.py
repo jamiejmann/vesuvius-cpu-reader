@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import reader_core as core  # noqa: E402  (light import: no torch at module level)
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "1.0.0"
 BUCKET = "vesuvius-challenge-open-data"
 BUCKET_HTTPS = f"https://{BUCKET}.s3.amazonaws.com/"
 META_URL = BUCKET_HTTPS + "metadata.min.json"

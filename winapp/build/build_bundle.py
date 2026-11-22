@@ -26,7 +26,7 @@ PY_VERSION = "3.12.10"                               # last 3.12 release with Wi
 PY_TAG = "312"
 VILLA_REPO = "https://github.com/ScrollPrize/villa.git"
 VILLA_COMMIT = "c8f3ba4"                              # the commit read_segment_cpu.py was verified with
-APP_VERSION = "0.1.0"
+APP_VERSION = "1.0.0"
 VC_DLLS = ["msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140.dll", "vcruntime140_1.dll",
            "concrt140.dll", "vcomp140.dll"]
 
